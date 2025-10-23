@@ -1,0 +1,238 @@
+# Import required libraries
+import streamlit as st  # For creating the web interface
+from chatterbot import ChatBot  # For AI chatbot functionality
+from chatterbot.trainers import ChatterBotCorpusTrainer, ListTrainer  # For training the bot
+import os  # For file system operations
+from datetime import datetime  # For timestamps
+
+# Configure the Streamlit page settings
+st.set_page_config(
+    page_title="AI Chatbot",  # Browser tab title
+    page_icon="🤖",  # Browser tab icon
+    layout="wide"  # Use full width of the page
+)
+
+# Function to initialize the chatbot
+@st.cache_resource  # Cache the chatbot so it doesn't reinitialize on every interaction
+def initialize_chatbot():
+    """
+    Creates and trains the chatbot instance.
+    This function only runs once thanks to @st.cache_resource decorator.
+    """
+    
+    # Create a ChatBot instance with custom configuration
+    chatbot = ChatBot(
+        'AdvancedBot',  # Name of the bot
+        storage_adapter='chatterbot.storage.SQLStorageAdapter',  # Store conversations in SQL database
+        database_uri='sqlite:///database.sqlite3',  # SQLite database file location
+        logic_adapters=[  # List of logic adapters for generating responses
+            {
+                'import_path': 'chatterbot.logic.BestMatch',  # Find best matching response
+                'default_response': 'I am still learning. Can you teach me something?',
+                'maximum_similarity_threshold': 0.90  # Confidence threshold (90%)
+            },
+            {
+                'import_path': 'chatterbot.logic.MathematicalEvaluation',  # Handle math questions
+            },
+            {
+                'import_path': 'chatterbot.logic.TimeLogicAdapter'  # Handle time-related questions
+            }
+        ]
+    )
+    
+    # Create a corpus trainer to train bot with pre-built conversation data
+    corpus_trainer = ChatterBotCorpusTrainer(chatbot)
+    
+    # Train the bot with English language corpus (greetings, conversations, etc.)
+    corpus_trainer.train(
+        "chatterbot.corpus.english.greetings",  # Basic greetings
+        "chatterbot.corpus.english.conversations"  # General conversations
+    )
+    
+    # Create a list trainer for custom training data
+    list_trainer = ListTrainer(chatbot)
+    
+    # Train with custom conversation pairs
+    custom_training = [
+        "What is your name?",
+        "I am AdvancedBot, your AI assistant created with ChatterBot!",
+        "What can you do?",
+        "I can chat with you, answer questions, solve math problems, and learn from our conversations!",
+        "Who created you?",
+        "I was created using Python, ChatterBot library, and Streamlit for the interface.",
+        "How are you?",
+        "I'm functioning perfectly! Thanks for asking. How can I help you today?",
+        "What is Python?",
+        "Python is a high-level programming language known for its simplicity and versatility.",
+        "What is machine learning?",
+        "Machine learning is a subset of AI that allows systems to learn and improve from experience.",
+    ]
+    
+    # Train the bot with our custom data
+    list_trainer.train(custom_training)
+    
+    return chatbot
+
+# Function to get bot response
+def get_bot_response(chatbot, user_input):
+    """
+    Gets response from the chatbot for user input.
+    
+    Args:
+        chatbot: The ChatBot instance
+        user_input: String input from the user
+    
+    Returns:
+        String response from the bot
+    """
+    try:
+        # Get response from chatbot
+        response = chatbot.get_response(user_input)
+        return str(response)  # Convert to string
+    except Exception as e:
+        # If any error occurs, return a friendly message
+        return f"Sorry, I encountered an error: {str(e)}"
+
+# Main function to run the Streamlit app
+def main():
+    # Add custom CSS styling
+    st.markdown("""
+        <style>
+        .main {
+            background-color: #f0f2f6;
+        }
+        .stTextInput > div > div > input {
+            background-color: white;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+    
+    # Display title and description
+    st.title("🤖 Advanced AI Chatbot")
+    st.markdown("### Powered by ChatterBot & Streamlit")
+    st.markdown("---")
+    
+    # Initialize the chatbot (only runs once due to caching)
+    chatbot = initialize_chatbot()
+    
+    # Initialize session state to store chat history
+    # Session state persists data across reruns
+    if 'messages' not in st.session_state:
+        st.session_state.messages = []  # Create empty list for messages
+    
+    if 'conversation_count' not in st.session_state:
+        st.session_state.conversation_count = 0  # Track number of messages
+    
+    # Create two columns for layout
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        # Display chat messages from history
+        st.markdown("### 💬 Conversation")
+        
+        # Container for chat messages
+        chat_container = st.container()
+        
+        with chat_container:
+            # Loop through all messages in history
+            for i, message in enumerate(st.session_state.messages):
+                # Check if message is from user or bot
+                if message["role"] == "user":
+                    # Display user message with avatar
+                    st.markdown(f"""
+                        <div style='background-color: #e3f2fd; padding: 10px; border-radius: 10px; margin: 5px 0;'>
+                            <strong>🧑 You:</strong> {message["content"]}
+                        </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    # Display bot message with avatar
+                    st.markdown(f"""
+                        <div style='background-color: #f1f8e9; padding: 10px; border-radius: 10px; margin: 5px 0;'>
+                            <strong>🤖 Bot:</strong> {message["content"]}
+                        </div>
+                    """, unsafe_allow_html=True)
+        
+        # Input area for user message
+        st.markdown("---")
+        
+        # Create form for user input
+        with st.form(key='message_form', clear_on_submit=True):
+            # Text input for user message
+            user_input = st.text_input(
+                "Type your message:",
+                placeholder="Ask me anything...",
+                key="user_input"
+            )
+            
+            # Create two columns for buttons
+            button_col1, button_col2 = st.columns([1, 5])
+            
+            with button_col1:
+                # Submit button
+                submit_button = st.form_submit_button("Send 📤")
+            
+            with button_col2:
+                # Clear chat button
+                clear_button = st.form_submit_button("Clear Chat 🗑️")
+        
+        # Handle clear button
+        if clear_button:
+            st.session_state.messages = []  # Clear message history
+            st.session_state.conversation_count = 0  # Reset counter
+            st.rerun()  # Rerun the app to refresh display
+        
+        # Handle submit button
+        if submit_button and user_input:
+            # Add user message to chat history
+            st.session_state.messages.append({
+                "role": "user",
+                "content": user_input,
+                "timestamp": datetime.now().strftime("%H:%M:%S")
+            })
+            
+            # Get bot response
+            with st.spinner("🤔 Thinking..."):
+                bot_response = get_bot_response(chatbot, user_input)
+            
+            # Add bot response to chat history
+            st.session_state.messages.append({
+                "role": "bot",
+                "content": bot_response,
+                "timestamp": datetime.now().strftime("%H:%M:%S")
+            })
+            
+            # Increment conversation counter
+            st.session_state.conversation_count += 1
+            
+            # Rerun to display new messages
+            st.rerun()
+    
+    with col2:
+        # Sidebar with information and stats
+        st.markdown("### 📊 Chat Statistics")
+        st.metric("Total Messages", len(st.session_state.messages))
+        st.metric("Conversations", st.session_state.conversation_count)
+        
+        st.markdown("---")
+        st.markdown("### ℹ️ About")
+        st.info("""
+            **Features:**
+            - AI-powered responses
+            - Math calculations
+            - Time queries
+            - Learning from conversations
+            - Persistent chat history
+        """)
+        
+        st.markdown("---")
+        st.markdown("### 💡 Try asking:")
+        st.markdown("""
+            - What is your name?
+            - What is 25 * 4?
+            - What time is it?
+            - Tell me about Python
+        """)
+
+# Entry point of the application
+if __name__ == "__main__":
+    main()
